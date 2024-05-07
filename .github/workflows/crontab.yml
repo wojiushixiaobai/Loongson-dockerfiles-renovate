@@ -6,39 +6,51 @@ on:
     - cron: '0 10 * * *'
 
 jobs:
-    contab-build:
+    check-python:
       runs-on: ubuntu-latest
       strategy:
         matrix:
-          python: [3.9, 3.10, 3.11, 3.12]
+          python: ['3.9', '3.10', '3.11', '3.12']
       steps:
-        - name: Checkout
+        - name: Checkout crontab
           uses: actions/checkout@v4
           with:
             fetch-depth: 1
             path: crontab
-        - uses: actions/checkout@v4
+        
+        - name: Checkout dockerfiles
+          uses: actions/checkout@v4
           with:
             repository: wojiushixiaobai/Loongson-dockerfiles
-            ref: upstream/main
             fetch-depth: 1
             path: dockerfiles
+            token: ${{ secrets.GH_TOKEN }}
+        
+        - name: Fetch upstream
+          run: |
+            git config --global user.name "${GITHUB_ACTOR}"
+            git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+            cd dockerfiles
+            git remote add upstream https://github.com/Loongson-Cloud-Community/dockerfiles.git
+            git fetch upstream
+            git merge upstream/main
+            git push origin main || true
 
         - name: Check Python ${{ matrix.python }} latest version
           run: |
             check_version=${{ matrix.python }}
             cd dockerfiles
-            git config --global user.name "${GITHUB_ACTOR}"
-            git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+            if git branch -a | grep -q "renovate_python_version_${check_version}"; then
+                git push origin --delete renovate_python_version_${check_version} || true
+                git branch -D renovate_python_version_${check_version} || true
+            fi
             git checkout -b renovate_python_version_${check_version}
             bash ../crontab/check_python.sh ${check_version}
+            git diff
             if ! git diff --quiet; then
-                git commit -am "build(python): bump library/python ${check_version} to latest"
-                git push origin renovate_python_version_${check_version} || true
-                # gh pr create --title "build(python): bump library/python ${check_version} to latest" --base upstream/main --head renovate_python_version_${check_version}
+                git commit -am "build(python): bump library/python ${check_version} to latest" || true
+                git push origin renovate_python_version_${check_version} -f || true
+                gh pr create --title "build(python): bump library/python ${check_version} to latest" --body "" --repo Loongson-Cloud-Community/dockerfiles --base main --head wojiushixiaobai:renovate_python_version_${check_version}
             fi
           env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-
-
+            GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
