@@ -1,25 +1,25 @@
 on:
-  # push:
-    # branches:
-      # - main
+  push:
+    branches:
+      - main
   schedule:
     - cron: '0 10 * * *'
-  
+
 jobs:
-  check-mc:
+  check-redis:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        app: ['mc']
-        image: ['minio/mc']
-        version: ['latest']
+        app: ['redis']
+        image: ['library/redis']
+        version: ['6.0', '6.2', '7.0', '7.2']
     steps:
       - name: Checkout crontab
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
           path: crontab
-          
+        
       - name: Checkout dockerfiles
         uses: actions/checkout@v4
         with:
@@ -27,7 +27,7 @@ jobs:
           fetch-depth: 1
           path: dockerfiles
           token: ${{ secrets.GH_TOKEN }}
-          
+        
       - name: Fetch upstream
         run: |
           git config --global user.name "${GITHUB_ACTOR}"
@@ -37,18 +37,18 @@ jobs:
           git fetch upstream
           git merge upstream/main
           git push origin main || true
-  
+
       - name: Check ${{ matrix.app }} latest version
         run: |
           cd dockerfiles
           branch_name="renovate_${{ matrix.app }}_version_${{ matrix.version }}"
-          commit_message="build(${{ matrix.app }}): bump ${{ matrix.image}} to latest"
+          commit_message="build(${{ matrix.app }}): bump ${{ matrix.image}} ${{ matrix.version }} to latest"
           if git branch -a | grep -q "${branch_name}"; then
             git push origin --delete ${branch_name} || true
             git branch -D ${branch_name} || true
           fi
           git checkout -b ${branch_name}
-          bash ../crontab/check_${{ matrix.app }}.sh
+          bash ../crontab/check_${{ matrix.app }}.sh ${{ matrix.version }}
           git diff
           if ! git diff --quiet; then
             git commit -am "${commit_message}" || true
