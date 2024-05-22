@@ -1,0 +1,59 @@
+on:
+  # push:
+    # branches:
+      # - main
+  schedule:
+    - cron: '0 22 * * *'
+    
+jobs:
+  check-dataease:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: ['dataease']
+        image: ['dataease/dataease']
+        version: ['latest']
+    steps:
+      - name: Checkout crontab
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          path: crontab
+            
+      - name: Checkout dockerfiles
+        uses: actions/checkout@v4
+        with:
+          repository: wojiushixiaobai/Loongson-dockerfiles
+          fetch-depth: 1
+          path: dockerfiles
+          token: ${{ secrets.GH_TOKEN }}
+            
+      - name: Fetch upstream
+        run: |
+          git config --global user.name "${GITHUB_ACTOR}"
+          git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          cd dockerfiles
+          git remote add upstream https://github.com/Loongson-Cloud-Community/dockerfiles.git
+          git fetch upstream
+          git merge upstream/main
+          git push origin main || true
+    
+      - name: Check ${{ matrix.app }} latest version
+        run: |
+          cd dockerfiles
+          branch_name="renovate_${{ matrix.app }}_version_${{ matrix.version }}"
+          commit_message="build(${{ matrix.app }}): bump ${{ matrix.image}} to latest"
+          if git branch -a | grep -q "${branch_name}"; then
+            git push origin --delete ${branch_name} || true
+            git branch -D ${branch_name} || true
+          fi
+          git checkout -b ${branch_name}
+          bash ../crontab/check_${{ matrix.app }}.sh
+          git diff
+          if ! git diff --quiet; then
+            git commit -am "${commit_message}" || true
+            git push origin ${branch_name} -f || true
+            gh pr create --title "${commit_message}" --body "This PR is automatically triggered by the GitHub Actions workflow. Please review and verify the changes." --repo Loongson-Cloud-Community/dockerfiles --base main --head wojiushixiaobai:${branch_name}
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
